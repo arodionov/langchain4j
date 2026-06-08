@@ -226,7 +226,8 @@ public class HazelcastChatMemoryStore implements ChatMemoryStore {
          * @throws IllegalArgumentException if {@code hazelcastInstance} was not set
          */
         public HazelcastChatMemoryStore build() {
-            ensureNotNull(hazelcastInstance,
+            ensureNotNull(
+                    hazelcastInstance,
                     "hazelcastInstance is required. Supply an embedded member instance "
                             + "(Hazelcast.newHazelcastInstance) or a client instance "
                             + "(HazelcastClient.newHazelcastClient) depending on your deployment topology.");

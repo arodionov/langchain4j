@@ -105,8 +105,8 @@ class HazelcastChatMemoryStoreIT {
     @Test
     void should_delete_messages_from_hazelcast() {
         // given
-        memoryStore.updateMessages(userId,
-                List.of(new SystemMessage("You are a large language model working with LangChain4j")));
+        memoryStore.updateMessages(
+                userId, List.of(new SystemMessage("You are a large language model working with LangChain4j")));
         assertThat(memoryStore.getMessages(userId)).hasSize(1);
 
         // when
@@ -119,10 +119,9 @@ class HazelcastChatMemoryStoreIT {
     @Test
     void should_overwrite_messages_on_update() {
         memoryStore.updateMessages(userId, List.of(new SystemMessage("First system prompt")));
-        memoryStore.updateMessages(userId, List.of(
-                new SystemMessage("Updated system prompt"),
-                new UserMessage("Hello"),
-                new AiMessage("Hi!")));
+        memoryStore.updateMessages(
+                userId,
+                List.of(new SystemMessage("Updated system prompt"), new UserMessage("Hello"), new AiMessage("Hi!")));
 
         List<ChatMessage> messages = memoryStore.getMessages(userId);
         assertThat(messages).hasSize(3);
@@ -132,12 +131,10 @@ class HazelcastChatMemoryStoreIT {
     @Test
     void should_isolate_different_memory_ids() {
         memoryStore.updateMessages("alice", List.of(new UserMessage("Alice's message")));
-        memoryStore.updateMessages("bob",   List.of(new UserMessage("Bob's message")));
+        memoryStore.updateMessages("bob", List.of(new UserMessage("Bob's message")));
 
-        assertThat(memoryStore.getMessages("alice"))
-                .containsExactly(new UserMessage("Alice's message"));
-        assertThat(memoryStore.getMessages("bob"))
-                .containsExactly(new UserMessage("Bob's message"));
+        assertThat(memoryStore.getMessages("alice")).containsExactly(new UserMessage("Alice's message"));
+        assertThat(memoryStore.getMessages("bob")).containsExactly(new UserMessage("Bob's message"));
     }
 
     @Test
@@ -192,8 +189,8 @@ class HazelcastChatMemoryStoreIT {
 
     @Test
     void updateMessages_memoryId_null() {
-        assertThatThrownBy(() -> memoryStore.updateMessages(null,
-                List.of(new SystemMessage("You are a large language model working with LangChain4j"))))
+        assertThatThrownBy(() -> memoryStore.updateMessages(
+                        null, List.of(new SystemMessage("You are a large language model working with LangChain4j"))))
                 .isExactlyInstanceOf(IllegalArgumentException.class)
                 .hasMessage("memoryId cannot be null");
     }
@@ -210,15 +207,14 @@ class HazelcastChatMemoryStoreIT {
     // -------------------------------------------------------------------------
 
     @ParameterizedTest
-    @NullAndEmptySource                        // null and ""
+    @NullAndEmptySource // null and ""
     @ValueSource(strings = {"  ", "  \t\n "}) // blank strings
     void should_use_default_map_name_when_name_is_blank(String name) {
         HazelcastChatMemoryStore store = HazelcastChatMemoryStore.builder()
                 .hazelcastInstance(hazelcastInstance)
                 .name(name)
                 .build();
-        assertThat(store.chatMemory.getName())
-                .isEqualTo(HazelcastChatMemoryStore.DEFAULT_MAP_NAME);
+        assertThat(store.chatMemory.getName()).isEqualTo(HazelcastChatMemoryStore.DEFAULT_MAP_NAME);
     }
 
     @Test
@@ -237,8 +233,7 @@ class HazelcastChatMemoryStoreIT {
         HazelcastChatMemoryStore store = HazelcastChatMemoryStore.create(imap);
 
         store.updateMessages("s1", List.of(new UserMessage("direct imap")));
-        assertThat(store.getMessages("s1"))
-                .containsExactly(new UserMessage("direct imap"));
+        assertThat(store.getMessages("s1")).containsExactly(new UserMessage("direct imap"));
 
         imap.clear();
     }

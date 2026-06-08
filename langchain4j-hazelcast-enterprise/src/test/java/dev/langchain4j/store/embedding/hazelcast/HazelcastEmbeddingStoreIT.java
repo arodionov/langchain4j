@@ -5,54 +5,47 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.hazelcast.config.Config;
+import com.hazelcast.config.JoinConfig;
 import com.hazelcast.config.vector.Metric;
 import com.hazelcast.config.vector.VectorCollectionConfig;
 import com.hazelcast.config.vector.VectorIndexConfig;
-import com.hazelcast.config.JoinConfig;
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.vector.VectorCollection;
-import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.exception.UnsupportedFeatureException;
-import dev.langchain4j.store.embedding.EmbeddingMatch;
-import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
-import dev.langchain4j.store.embedding.EmbeddingSearchResult;
-import java.util.List;
+import dev.langchain4j.model.embedding.EmbeddingModel;
+import dev.langchain4j.model.embedding.onnx.allminilml6v2q.AllMiniLmL6V2QuantizedEmbeddingModel;
+import dev.langchain4j.store.embedding.EmbeddingStore;
+import dev.langchain4j.store.embedding.EmbeddingStoreIT;
+import dev.langchain4j.store.embedding.filter.Filter;
 import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.TestInfo;
 
 /**
- * Integration tests for {@link HazelcastEmbeddingStore}.
+ * Runs the standard {@link EmbeddingStoreIT} contract suite against {@link HazelcastEmbeddingStore},
+ * plus a few builder/factory tests not covered by the shared suite.
  * <p>
- * Requires a running Hazelcast Enterprise instance with a valid license key configured
- * as the system property {@code hazelcast.enterprise.license.key} or via the
- * {@code HZ_LICENSEKEY} environment variable.
- * <p>
- * An embedded single-member cluster is used — no external process needed.
+ * Requires a Hazelcast Enterprise license key supplied via the
+ * {@code hazelcast.enterprise.license.key} system property or the {@code HZ_LICENSEKEY}
+ * environment variable; the suite is skipped when neither is set. An embedded single-member
+ * cluster is used — no external process needed.
  */
-class HazelcastEmbeddingStoreIT {
+class HazelcastEmbeddingStoreIT extends EmbeddingStoreIT {
 
-    /**
-     * Small fixed dimension used throughout tests.
-     * Must match the dimension of the test embeddings below.
-     */
-    private static final int DIMENSION = 4;
+    /** Dimension of {@link AllMiniLmL6V2QuantizedEmbeddingModel}. */
+    private static final int DIMENSION = 384;
 
     static HazelcastInstance hazelcastInstance;
 
-    HazelcastEmbeddingStore store;
+    static EmbeddingModel embeddingModel = new AllMiniLmL6V2QuantizedEmbeddingModel();
+
+    static HazelcastEmbeddingStore embeddingStore;
 
     @BeforeAll
     static void startHazelcast() {
-        String licenseKey = System.getProperty("hazelcast.enterprise.license.key");
-        if (licenseKey == null || licenseKey.isBlank()) {
-            licenseKey = System.getenv("HZ_LICENSEKEY");
-        }
+        String licenseKey = HazelcastTestSupport.licenseKey();
         assumeTrue(
                 licenseKey != null && !licenseKey.isBlank(),
                 "Hazelcast Enterprise license key not provided via the "
@@ -60,12 +53,19 @@ class HazelcastEmbeddingStoreIT {
                         + "environment variable; skipping HazelcastEmbeddingStoreIT.");
 
         Config config = new Config();
-        config.setClusterName("langchain4j-embedding-test");
+        config.setClusterName("langchain4j-embedding-it");
         config.setLicenseKey(licenseKey);
         JoinConfig join = config.getNetworkConfig().getJoin();
         join.getMulticastConfig().setEnabled(false);
         join.getTcpIpConfig().setEnabled(false);
         hazelcastInstance = Hazelcast.newHazelcastInstance(config);
+
+        embeddingStore = HazelcastEmbeddingStore.builder()
+                .hazelcastInstance(hazelcastInstance)
+                .collectionName("embedding-store-it")
+                .dimension(DIMENSION)
+                .metric(Metric.COSINE)
+                .build();
     }
 
     @AfterAll
@@ -75,207 +75,31 @@ class HazelcastEmbeddingStoreIT {
         }
     }
 
-    @BeforeEach
-    void setUp(TestInfo testInfo) {
-        // Use the test display name as the collection name for isolation
-        store = HazelcastEmbeddingStore.builder()
-                .hazelcastInstance(hazelcastInstance)
-                .collectionName(testInfo.getDisplayName())
-                .dimension(DIMENSION)
-                .metric(Metric.COSINE)
-                .build();
+    @Override
+    protected EmbeddingStore<TextSegment> embeddingStore() {
+        return embeddingStore;
     }
 
-    @AfterEach
-    void tearDown() {
-        if (store != null) {
-            store.collection.destroy();
-        }
+    @Override
+    protected EmbeddingModel embeddingModel() {
+        return embeddingModel;
+    }
+
+    @Override
+    protected void clearStore() {
+        embeddingStore.removeAll();
     }
 
     // -------------------------------------------------------------------------
-    // add / search
-    // -------------------------------------------------------------------------
-
-    @Test
-    void should_add_embedding_and_return_generated_id() {
-        Embedding embedding = embedding(1f, 0f, 0f, 0f);
-        String id = store.add(embedding);
-        assertThat(id).isNotBlank();
-    }
-
-    @Test
-    void should_add_embedding_with_explicit_id() {
-        Embedding embedding = embedding(1f, 0f, 0f, 0f);
-        store.add("my-id", embedding);
-
-        EmbeddingSearchResult<TextSegment> result = store.search(searchRequest(embedding, 1));
-        assertThat(result.matches()).hasSize(1);
-        assertThat(result.matches().get(0).embeddingId()).isEqualTo("my-id");
-    }
-
-    @Test
-    void should_add_embedding_with_segment_and_retrieve_it() {
-        TextSegment segment = TextSegment.from("Hello, world!");
-        Embedding embedding = embedding(1f, 0f, 0f, 0f);
-
-        store.add(embedding, segment);
-
-        EmbeddingSearchResult<TextSegment> result = store.search(searchRequest(embedding, 1));
-        assertThat(result.matches()).hasSize(1);
-        assertThat(result.matches().get(0).embedded()).isEqualTo(segment);
-    }
-
-    @Test
-    void should_add_all_embeddings_without_segments() {
-        List<Embedding> embeddings = List.of(
-                embedding(1f, 0f, 0f, 0f),
-                embedding(0f, 1f, 0f, 0f));
-
-        List<String> ids = store.addAll(embeddings);
-        assertThat(ids).hasSize(2);
-    }
-
-    @Test
-    void should_add_all_embeddings_with_segments() {
-        List<Embedding> embeddings = List.of(
-                embedding(1f, 0f, 0f, 0f),
-                embedding(0f, 1f, 0f, 0f));
-        List<TextSegment> segments = List.of(
-                TextSegment.from("First"),
-                TextSegment.from("Second"));
-
-        List<String> ids = store.addAll(embeddings, segments);
-        assertThat(ids).hasSize(2);
-    }
-
-    @Test
-    void should_return_matches_ordered_by_descending_score() {
-        Embedding query    = embedding(1f, 0f, 0f, 0f);
-        Embedding close    = embedding(0.9f, 0.1f, 0f, 0f);
-        Embedding far      = embedding(0f, 0f, 1f, 0f);
-
-        store.add(close, TextSegment.from("close"));
-        store.add(far,   TextSegment.from("far"));
-
-        EmbeddingSearchResult<TextSegment> result = store.search(searchRequest(query, 2));
-        assertThat(result.matches()).hasSize(2);
-        assertThat(result.matches().get(0).score())
-                .isGreaterThan(result.matches().get(1).score());
-        assertThat(result.matches().get(0).embedded().text()).isEqualTo("close");
-    }
-
-    @Test
-    void should_respect_max_results() {
-        store.add(embedding(1f, 0f, 0f, 0f), TextSegment.from("A"));
-        store.add(embedding(0f, 1f, 0f, 0f), TextSegment.from("B"));
-        store.add(embedding(0f, 0f, 1f, 0f), TextSegment.from("C"));
-
-        EmbeddingSearchResult<TextSegment> result =
-                store.search(searchRequest(embedding(1f, 0f, 0f, 0f), 2));
-        assertThat(result.matches()).hasSize(2);
-    }
-
-    @Test
-    void should_respect_min_score() {
-        store.add(embedding(1f, 0f, 0f, 0f), TextSegment.from("exact"));
-        store.add(embedding(0f, 1f, 0f, 0f), TextSegment.from("orthogonal"));
-
-        EmbeddingSearchResult<TextSegment> result = store.search(
-                EmbeddingSearchRequest.builder()
-                        .queryEmbedding(embedding(1f, 0f, 0f, 0f))
-                        .maxResults(10)
-                        .minScore(0.9)
-                        .build());
-
-        assertThat(result.matches()).hasSize(1);
-        assertThat(result.matches().get(0).embedded().text()).isEqualTo("exact");
-    }
-
-    @Test
-    void should_report_relevance_score_in_normalized_range() {
-        // An orthogonal vector has cosine similarity 0. Hazelcast normalizes COSINE scores
-        // to a non-negative [0, 1] range, so the relevance score must be ~0.5 — NOT ~0.75,
-        // which is what double-normalizing through RelevanceScore.fromCosineSimilarity produces.
-        // This pins the score semantics that the order-only / threshold tests cannot detect.
-        Embedding query = embedding(1f, 0f, 0f, 0f);
-        Embedding orthogonal = embedding(0f, 1f, 0f, 0f);
-
-        store.add(orthogonal, TextSegment.from("orthogonal"));
-
-        EmbeddingSearchResult<TextSegment> result = store.search(searchRequest(query, 1));
-        assertThat(result.matches()).hasSize(1);
-        assertThat(result.matches().get(0).score()).isBetween(0.45, 0.55);
-    }
-
-    // -------------------------------------------------------------------------
-    // remove
-    // -------------------------------------------------------------------------
-
-    @Test
-    void should_remove_by_id() {
-        String id = store.add(embedding(1f, 0f, 0f, 0f), TextSegment.from("to remove"));
-        store.remove(id);
-
-        EmbeddingSearchResult<TextSegment> result =
-                store.search(searchRequest(embedding(1f, 0f, 0f, 0f), 10));
-        assertThat(result.matches())
-                .noneMatch(m -> id.equals(m.embeddingId()));
-    }
-
-    @Test
-    void should_remove_all_by_ids() {
-        String id1 = store.add(embedding(1f, 0f, 0f, 0f), TextSegment.from("one"));
-        String id2 = store.add(embedding(0f, 1f, 0f, 0f), TextSegment.from("two"));
-        store.add(embedding(0f, 0f, 1f, 0f), TextSegment.from("three"));
-
-        store.removeAll(List.of(id1, id2));
-
-        EmbeddingSearchResult<TextSegment> result =
-                store.search(searchRequest(embedding(0f, 0f, 1f, 0f), 10));
-        assertThat(result.matches())
-                .noneMatch(m -> id1.equals(m.embeddingId()))
-                .noneMatch(m -> id2.equals(m.embeddingId()));
-    }
-
-    @Test
-    void should_remove_all_and_remain_usable() {
-        store.add(embedding(1f, 0f, 0f, 0f), TextSegment.from("one"));
-        store.add(embedding(0f, 1f, 0f, 0f), TextSegment.from("two"));
-
-        // when all entries are cleared
-        store.removeAll();
-
-        // then the collection is empty...
-        EmbeddingSearchResult<TextSegment> afterClear =
-                store.search(searchRequest(embedding(1f, 0f, 0f, 0f), 10));
-        assertThat(afterClear.matches()).isEmpty();
-
-        // ...and the store is still usable (clearAsync preserves the collection and its index)
-        String id = store.add(embedding(1f, 0f, 0f, 0f), TextSegment.from("after clear"));
-        EmbeddingSearchResult<TextSegment> afterReuse =
-                store.search(searchRequest(embedding(1f, 0f, 0f, 0f), 10));
-        assertThat(afterReuse.matches()).hasSize(1);
-        assertThat(afterReuse.matches().get(0).embeddingId()).isEqualTo(id);
-        assertThat(afterReuse.matches().get(0).embedded().text()).isEqualTo("after clear");
-    }
-
-    @Test
-    void removeAll_filter_throws_unsupported() {
-        assertThatThrownBy(() -> store.removeAll((dev.langchain4j.store.embedding.filter.Filter) null))
-                .isInstanceOf(UnsupportedFeatureException.class);
-    }
-
-    // -------------------------------------------------------------------------
-    // Builder validation
+    // Builder / factory behaviour not covered by the shared suite
     // -------------------------------------------------------------------------
 
     @Test
     void builder_throws_when_hazelcast_instance_missing() {
         assertThatThrownBy(() -> HazelcastEmbeddingStore.builder()
-                .collectionName("test")
-                .dimension(4)
-                .build())
+                        .collectionName("missing-instance")
+                        .dimension(DIMENSION)
+                        .build())
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("hazelcastInstance");
     }
@@ -283,41 +107,30 @@ class HazelcastEmbeddingStoreIT {
     @Test
     void builder_throws_when_dimension_not_set() {
         assertThatThrownBy(() -> HazelcastEmbeddingStore.builder()
-                .hazelcastInstance(hazelcastInstance)
-                .collectionName("test")
-                .build())
+                        .hazelcastInstance(hazelcastInstance)
+                        .collectionName("missing-dimension")
+                        .build())
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("dimension");
     }
 
     @Test
-    void should_accept_pre_configured_collection() {
-        VectorCollectionConfig config = new VectorCollectionConfig("pre-configured")
-                .addVectorIndexConfig(new VectorIndexConfig()
-                        .setDimension(DIMENSION)
-                        .setMetric(Metric.COSINE));
-        VectorCollection<String, TextSegmentDocument> col =
-                VectorCollection.getCollection(hazelcastInstance, config);
+    void removeAll_filter_throws_unsupported() {
+        assertThatThrownBy(() -> embeddingStore.removeAll((Filter) null))
+                .isInstanceOf(UnsupportedFeatureException.class);
+    }
 
-        HazelcastEmbeddingStore s = HazelcastEmbeddingStore.create(col);
-        String id = s.add(embedding(1f, 0f, 0f, 0f), TextSegment.from("pre-configured"));
+    @Test
+    void should_accept_pre_configured_collection() {
+        VectorCollectionConfig config = new VectorCollectionConfig("pre-configured-it")
+                .addVectorIndexConfig(
+                        new VectorIndexConfig().setDimension(DIMENSION).setMetric(Metric.COSINE));
+        VectorCollection<String, TextSegmentDocument> col = VectorCollection.getCollection(hazelcastInstance, config);
+
+        HazelcastEmbeddingStore store = HazelcastEmbeddingStore.create(col);
+        String id = store.add(embeddingModel.embed("pre-configured").content(), TextSegment.from("pre-configured"));
         assertThat(id).isNotBlank();
 
         col.destroy();
-    }
-
-    // -------------------------------------------------------------------------
-    // Helpers
-    // -------------------------------------------------------------------------
-
-    private static Embedding embedding(float... values) {
-        return new Embedding(values);
-    }
-
-    private static EmbeddingSearchRequest searchRequest(Embedding query, int maxResults) {
-        return EmbeddingSearchRequest.builder()
-                .queryEmbedding(query)
-                .maxResults(maxResults)
-                .build();
     }
 }

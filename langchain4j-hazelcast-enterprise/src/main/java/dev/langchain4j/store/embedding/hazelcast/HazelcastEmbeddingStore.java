@@ -18,7 +18,6 @@ import com.hazelcast.vector.SearchResults;
 import com.hazelcast.vector.VectorCollection;
 import com.hazelcast.vector.VectorDocument;
 import com.hazelcast.vector.VectorValues;
-import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.exception.UnsupportedFeatureException;
@@ -113,16 +112,20 @@ public class HazelcastEmbeddingStore implements EmbeddingStore<TextSegment> {
     public void add(String id, Embedding embedding) {
         ensureNotBlank(id, "id");
         ensureNotNull(embedding, "embedding");
-        collection.setAsync(id, toDocument(embedding, null))
-                .toCompletableFuture().join();
+        collection
+                .setAsync(id, toDocument(embedding, null))
+                .toCompletableFuture()
+                .join();
     }
 
     @Override
     public String add(Embedding embedding, TextSegment segment) {
         String id = randomUUID();
         ensureNotNull(embedding, "embedding");
-        collection.setAsync(id, toDocument(embedding, segment))
-                .toCompletableFuture().join();
+        collection
+                .setAsync(id, toDocument(embedding, segment))
+                .toCompletableFuture()
+                .join();
         return id;
     }
 
@@ -141,8 +144,7 @@ public class HazelcastEmbeddingStore implements EmbeddingStore<TextSegment> {
         boolean hasSegments = segments != null && !segments.isEmpty();
         ensureTrue(ids.size() == embeddings.size(), "ids size is not equal to embeddings size");
         if (hasSegments) {
-            ensureTrue(embeddings.size() == segments.size(),
-                    "embeddings size is not equal to segments size");
+            ensureTrue(embeddings.size() == segments.size(), "embeddings size is not equal to segments size");
         }
 
         Map<String, VectorDocument<TextSegmentDocument>> batch = new HashMap<>();
@@ -176,9 +178,8 @@ public class HazelcastEmbeddingStore implements EmbeddingStore<TextSegment> {
      */
     @Override
     public void removeAll(Filter filter) {
-        throw new UnsupportedFeatureException(
-                "removeAll(Filter) is not supported by HazelcastEmbeddingStore. "
-                        + "Hazelcast VectorCollection does not provide a server-side predicate delete.");
+        throw new UnsupportedFeatureException("removeAll(Filter) is not supported by HazelcastEmbeddingStore. "
+                + "Hazelcast VectorCollection does not provide a server-side predicate delete.");
     }
 
     /**
@@ -197,10 +198,9 @@ public class HazelcastEmbeddingStore implements EmbeddingStore<TextSegment> {
         ensureNotNull(request, "request");
 
         if (request.filter() != null) {
-            log.warning(
-                    "HazelcastEmbeddingStore: EmbeddingSearchRequest.filter() is not supported "
-                            + "server-side by Hazelcast VectorCollection. The filter will be applied "
-                            + "client-side after retrieval, which may return fewer than maxResults matches.");
+            log.warning("HazelcastEmbeddingStore: EmbeddingSearchRequest.filter() is not supported "
+                    + "server-side by Hazelcast VectorCollection. The filter will be applied "
+                    + "client-side after retrieval, which may return fewer than maxResults matches.");
         }
 
         SearchOptions options = SearchOptions.builder()
@@ -262,8 +262,7 @@ public class HazelcastEmbeddingStore implements EmbeddingStore<TextSegment> {
     // -------------------------------------------------------------------------
 
     private VectorDocument<TextSegmentDocument> toDocument(Embedding embedding, TextSegment segment) {
-        return VectorDocument.of(TextSegmentDocument.from(segment),
-                VectorValues.of(embedding.vector()));
+        return VectorDocument.of(TextSegmentDocument.from(segment), VectorValues.of(embedding.vector()));
     }
 
     // -------------------------------------------------------------------------
@@ -277,8 +276,7 @@ public class HazelcastEmbeddingStore implements EmbeddingStore<TextSegment> {
      * @param collection the {@link VectorCollection}; must not be {@code null}
      * @return a {@link HazelcastEmbeddingStore}
      */
-    public static HazelcastEmbeddingStore create(
-            VectorCollection<String, TextSegmentDocument> collection) {
+    public static HazelcastEmbeddingStore create(VectorCollection<String, TextSegmentDocument> collection) {
         return new HazelcastEmbeddingStore(collection);
     }
 
@@ -327,8 +325,7 @@ public class HazelcastEmbeddingStore implements EmbeddingStore<TextSegment> {
          * @return this builder
          */
         public Builder collectionName(String collectionName) {
-            this.collectionName = isNullOrBlank(collectionName)
-                    ? DEFAULT_COLLECTION_NAME : collectionName;
+            this.collectionName = isNullOrBlank(collectionName) ? DEFAULT_COLLECTION_NAME : collectionName;
             return this;
         }
 
@@ -367,9 +364,8 @@ public class HazelcastEmbeddingStore implements EmbeddingStore<TextSegment> {
             ensureTrue(dimension > 0, "dimension must be a positive integer");
 
             VectorCollectionConfig config = new VectorCollectionConfig(collectionName)
-                    .addVectorIndexConfig(new VectorIndexConfig()
-                            .setDimension(dimension)
-                            .setMetric(metric));
+                    .addVectorIndexConfig(
+                            new VectorIndexConfig().setDimension(dimension).setMetric(metric));
 
             VectorCollection<String, TextSegmentDocument> col =
                     VectorCollection.getCollection(hazelcastInstance, config);
