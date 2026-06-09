@@ -229,8 +229,6 @@ public class HazelcastEmbeddingStore implements EmbeddingStore<TextSegment> {
 
             // Hazelcast already returns a non-negative, normalized similarity in [0, 1]
             // (cosine "adjusted to be non-negative"), so it is the relevance score directly.
-            // Do NOT pass it through RelevanceScore.fromCosineSimilarity, which expects raw
-            // cosine in [-1, 1] and would compress all scores into [0.5, 1.0].
             double score = result.getScore();
             if (score < minScore) {
                 continue;

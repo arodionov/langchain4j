@@ -97,8 +97,6 @@ public class HazelcastChatMemoryStore implements ChatMemoryStore {
     public void updateMessages(Object memoryId, List<ChatMessage> messages) {
         validateId(memoryId);
         String json = ChatMessageSerializer.messagesToJson(ensureNotEmpty(messages, "messages"));
-        // set() rather than put(): the previous value is not needed, so this avoids
-        // serializing and returning the old entry on every update.
         chatMemory.set(key(memoryId), json);
     }
 

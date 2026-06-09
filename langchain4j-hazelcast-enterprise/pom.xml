@@ -103,6 +103,22 @@
             </plugin>
 
             <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <configuration>
+                    <usedDependencies>
+                        <!--
+                            langchain4j-hazelcast is re-exported on purpose so that consumers of the
+                            Enterprise edition also get the CE IMap-based HazelcastChatMemoryStore from
+                            a single dependency. No Enterprise source references it directly, so
+                            dependency:analyze would otherwise report it as unused.
+                        -->
+                        <dependency>dev.langchain4j:langchain4j-hazelcast</dependency>
+                    </usedDependencies>
+                </configuration>
+            </plugin>
+
+            <plugin>
                 <groupId>org.revapi</groupId>
                 <artifactId>revapi-maven-plugin</artifactId>
                 <configuration>
@@ -196,6 +212,26 @@
                                     <ignore>true</ignore>
                                     <code>java.class.externalClassExposedInAPI</code>
                                     <new>missing-class dev.langchain4j.store.embedding.filter.Filter</new>
+                                </item>
+                                <item>
+                                    <ignore>true</ignore>
+                                    <code>java.missing.newClass</code>
+                                    <new>missing-class com.hazelcast.cp.CPMap</new>
+                                </item>
+                                <item>
+                                    <ignore>true</ignore>
+                                    <code>java.class.externalClassExposedInAPI</code>
+                                    <new>missing-class com.hazelcast.cp.CPMap</new>
+                                </item>
+                                <item>
+                                    <ignore>true</ignore>
+                                    <code>java.missing.newClass</code>
+                                    <new>missing-class dev.langchain4j.data.message.ChatMessage</new>
+                                </item>
+                                <item>
+                                    <ignore>true</ignore>
+                                    <code>java.class.externalClassExposedInAPI</code>
+                                    <new>missing-class dev.langchain4j.data.message.ChatMessage</new>
                                 </item>
                             </differences>
                         </revapi.differences>

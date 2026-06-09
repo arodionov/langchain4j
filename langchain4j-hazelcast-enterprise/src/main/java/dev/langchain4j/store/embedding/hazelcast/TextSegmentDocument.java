@@ -53,12 +53,4 @@ public class TextSegmentDocument implements Serializable {
         }
         return new TextSegment(text, Metadata.from(metadata));
     }
-
-    public String getText() {
-        return text;
-    }
-
-    public Map<String, Object> getMetadata() {
-        return Collections.unmodifiableMap(metadata);
-    }
 }
